@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>eRegistrar</title>
+    <style>
+        nav { padding: 10px; background: #f0f0f0; }
+        .form-container { margin: 20px; }
+        .hidden { display: none; }
+        .menu-item { margin-right: 10px; }
+        table { border-collapse: collapse; width: 80%; margin: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+        }
+        .modal-content {
+            background: white;
+            margin: 15% auto;
+            padding: 20px;
+            width: 50%;
+            border-radius: 5px;
+        }
+        .modal-content input, .modal-content button { margin: 5px 0; }
+    </style>
+    <script>
+        let currentRole = null;
+        const BASE_URL = 'http://localhost:8082';
+
+        function toggleForm(showRegister) {
+            document.getElementById('loginForm').classList.toggle('hidden', showRegister);
+            document.getElementById('registerForm').classList.toggle('hidden', !showRegister);
+        }
+
+        function displayUserInfo() {
+            const token = localStorage.getItem('jwtToken');
+            const userInfoDiv = document.getElementById('userInfo');
+            const authContainer = document.getElementById('authContainer');
+            const menu = document.getElementById('menu');
+            const studentSection = document.getElementById('studentSection');
+
+            if (token) {
+                fetch(`${BASE_URL}/api/auth/userinfo`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': 'Bearer ' + token,
+                        'Content-Type': 'application/json'
+                    }
+                })
+                    .then(response => {
+                        if (!response.ok) {
+                            return response.json().then(err => {
+                                throw new Error(`User info fetch failed: ${response.status} - ${err.error || 'Unknown error'}`);
+                            });
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log('User info:', data);
+                        userInfoDiv.innerText = `Welcome ${data.firstName} ${data.lastName} (${data.role})`;
+                        userInfoDiv.classList.remove('hidden');
+                        authContainer.classList.add('hidden');
+                        menu.classList.remove('hidden');
+                        studentSection.classList.remove('hidden');
+                        currentRole = data.role;
+                        updateMenu();
+                        fetchStudents();
+                    })
+                    .catch(error => {
+                        console.error('Display user info error:', error);
+                        logout();
+                    });
+            } else {
+                userInfoDiv.classList.add('hidden');
+                authContainer.classList.remove('hidden');
+                menu.classList.add('hidden');
+                studentSection.classList.add('hidden');
+            }
+        }
+
+        function updateMenu() {
+            document.getElementById('listStudents').classList.toggle('hidden', false);
+            document.getElementById('addStudent').classList.toggle('hidden', !['ADMIN', 'TEACHER'].includes(currentRole));
+            document.getElementById('editStudent').classList.toggle('hidden', currentRole !== 'ADMIN');
+            document.getElementById('deleteStudent').classList.toggle('hidden', currentRole !== 'ADMIN');
+        }
+
+        function login(event) {
+            event.preventDefault();
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+
+            fetch(`${BASE_URL}/api/auth/login`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ email, password })
+            })
+                .then(response => {
+                    console.log('Login response status:', response.status);
+                    if (!response.ok) {
+                        return response.text().then(text => {
+                            throw new Error(`Login failed: ${response.status} - ${text}`);
+                        });
+                    }
+                    return response.text();
+                })
+                .then(token => {
+                    console.log('Received JWT:', token);
+                    localStorage.setItem('jwtToken', token);
+                    displayUserInfo();
+                })
+                .catch(error => {
+                    console.error('Login error:', error);
+                    alert(error.message);
+                });
+        }
+
+        function register(event) {
+            event.preventDefault();
+            const email = document.getElementById('regEmail').value;
+            const password = document.getElementById('regPassword').value;
+            const firstName = document.getElementById('firstName').value;
+            const lastName = document.getElementById('lastName').value;
+            const role = document.getElementById('role').value;
+
+            fetch(`${BASE_URL}/api/auth/register`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ email, password, firstName, lastName, role })
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.text().then(text => {
+                            throw new Error(`Registration failed: ${response.status} - ${text}`);
+                        });
+                    }
+                    return response.text();
+                })
+                .then(() => {
+                    alert('Registration successful! Please login.');
+                    toggleForm(false);
+                })
+                .catch(error => {
+                    console.error('Register error:', error);
+                    alert(error.message);
+                });
+        }
+
+        function logout() {
+            localStorage.removeItem('jwtToken');
+            currentRole = null;
+            displayUserInfo();
+        }
+
+        function fetchStudents() {
+            const token = localStorage.getItem('jwtToken');
+            fetch(`${BASE_URL}/api/student`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                    'Content-Type': 'application/json'
+                }
+            })
+                .then(response => {
+                    if (!response.ok) throw new Error('Failed to fetch students');
+                    return response.json();
+                })
+                .then(students => {
+                    const tbody = document.getElementById('studentTableBody');
+                    tbody.innerHTML = '';
+                    students.forEach(student => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                        <td>${student.studentId}</td>
+                        <td>${student.firstName}</td>
+                        <td>${student.lastName}</td>
+                        <td>${student.studentNumber}</td>
+                        <td>${student.email}</td>
+                        <td>${student.address}</td>
+                        <td>${student.cgpa}</td>
+                        ${currentRole === 'ADMIN' ? `
+                            <td>
+                                <button onclick="showEditStudentModal(${student.studentId})">Edit</button>
+                                <button onclick="deleteStudent(${student.studentId})">Delete</button>
+                            </td>
+                        ` : ''}
+                    `;
+                        tbody.appendChild(tr);
+                    });
+                })
+                .catch(error => console.error('Fetch students error:', error));
+        }
+
+        function showAddStudentModal() {
+            const modal = document.getElementById('studentModal');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalForm = document.getElementById('modalForm');
+            modalTitle.innerText = 'Add Student';
+            modalForm.innerHTML = `
+                <input type="text" id="modalFirstName" placeholder="First Name" required><br>
+                <input type="text" id="modalLastName" placeholder="Last Name" required><br>
+                <input type="text" id="modalStudentNumber" placeholder="Student Number" required><br>
+                <input type="email" id="modalEmail" placeholder="Email" required><br>
+                <input type="text" id="modalAddress" placeholder="Address" required><br>
+                <input type="number" id="modalCgpa" placeholder="CGPA" step="0.01" min="0" max="4" required><br>
+                <button type="submit">Save</button>
+                <button type="button" onclick="closeModal()">Cancel</button>
+            `;
+            modal.style.display = 'block';
+            modalForm.onsubmit = function(event) {
+                event.preventDefault();
+                addStudent();
+            };
+        }
+
+        function showEditStudentModal(id) {
+            const token = localStorage.getItem('jwtToken');
+            fetch(`${BASE_URL}/api/student/${id}`, {
+                headers: { 'Authorization': 'Bearer ' + token }
+            })
+                .then(response => response.json())
+                .then(student => {
+                    const modal = document.getElementById('studentModal');
+                    const modalTitle = document.getElementById('modalTitle');
+                    const modalForm = document.getElementById('modalForm');
+                    modalTitle.innerText = 'Edit Student';
+                    modalForm.innerHTML = `
+                    <input type="text" id="modalFirstName" value="${student.firstName}" required><br>
+                    <input type="text" id="modalLastName" value="${student.lastName}" required><br>
+                    <input type="text" id="modalStudentNumber" value="${student.studentNumber}" required><br>
+                    <input type="email" id="modalEmail" value="${student.email}" required><br>
+                    <input type="text" id="modalAddress" value="${student.address}" required><br>
+                    <input type="number" id="modalCgpa" value="${student.cgpa}" step="0.01" min="0" max="4" required><br>
+                    <button type="submit">Save</button>
+                    <button type="button" onclick="closeModal()">Cancel</button>
+                `;
+                    modal.style.display = 'block';
+                    modalForm.onsubmit = function(event) {
+                        event.preventDefault();
+                        editStudent(id);
+                    };
+                });
+        }
+
+        function closeModal() {
+            document.getElementById('studentModal').style.display = 'none';
+        }
+
+        function addStudent() {
+            const firstName = document.getElementById('modalFirstName').value;
+            const lastName = document.getElementById('modalLastName').value;
+            const studentNumber = document.getElementById('modalStudentNumber').value;
+            const email = document.getElementById('modalEmail').value;
+            const address = document.getElementById('modalAddress').value;
+            const cgpa = parseFloat(document.getElementById('modalCgpa').value);
+            const token = localStorage.getItem('jwtToken');
+
+            fetch(`${BASE_URL}/api/student`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({ firstName, lastName, studentNumber, email, address, cgpa })
+            })
+                .then(response => {
+                    if (!response.ok) throw new Error('Failed to add student');
+                    return response.json();
+                })
+                .then(() => {
+                    closeModal();
+                    fetchStudents();
+                })
+                .catch(error => console.error('Add student error:', error));
+        }
+
+        function editStudent(id) {
+            const firstName = document.getElementById('modalFirstName').value;
+            const lastName = document.getElementById('modalLastName').value;
+            const studentNumber = document.getElementById('modalStudentNumber').value;
+            const email = document.getElementById('modalEmail').value;
+            const address = document.getElementById('modalAddress').value;
+            const cgpa = parseFloat(document.getElementById('modalCgpa').value);
+            const token = localStorage.getItem('jwtToken');
+
+            fetch(`${BASE_URL}/api/student/${id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({ firstName, lastName, studentNumber, email, address, cgpa })
+            })
+                .then(response => {
+                    if (!response.ok) throw new Error('Failed to edit student');
+                    return response.json();
+                })
+                .then(() => {
+                    closeModal();
+                    fetchStudents();
+                })
+                .catch(error => console.error('Edit student error:', error));
+        }
+
+        function deleteStudent(id) {
+            const token = localStorage.getItem('jwtToken');
+            fetch(`${BASE_URL}/api/student/${id}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                    'Content-Type': 'application/json'
+                }
+            })
+                .then(response => {
+                    if (!response.ok) throw new Error('Failed to delete student');
+                    fetchStudents();
+                })
+                .catch(error => console.error('Delete student error:', error));
+        }
+    </script>
+</head>
+<body onload="displayUserInfo()">
+<nav>
+    <div id="userInfo" class="hidden"></div>
+    <div id="menu" class="hidden">
+        <span class="menu-item" id="listStudents"><a href="#" onclick="fetchStudents()">List Students</a></span>
+        <span class="menu-item" id="addStudent"><a href="#" onclick="showAddStudentModal()">Add Student</a></span>
+        <span class="menu-item" id="editStudent"><a href="#" onclick="alert('Click Edit on a student row')">Edit Student</a></span>
+        <span class="menu-item" id="deleteStudent"><a href="#" onclick="alert('Click Delete on a student row')">Delete Student</a></span>
+        <span class="menu-item"><a href="#" onclick="logout()">Logout</a></span>
+    </div>
+</nav>
+
+<div id="authContainer" class="form-container">
+    <div id="loginForm">
+        <h2>Login to eRegistrar</h2>
+        <form onsubmit="login(event)">
+            <div>
+                <label>Email:</label><br>
+                <input type="email" id="loginEmail" required>
+            </div>
+            <div>
+                <label>Password:</label><br>
+                <input type="password" id="loginPassword" required>
+            </div>
+            <div>
+                <button type="submit">Login</button>
+                <button type="button" onclick="toggleForm(true)">Register</button>
+            </div>
+        </form>
+    </div>
+    <div id="registerForm" class="hidden">
+        <h2>Register for eRegistrar</h2>
+        <form onsubmit="register(event)">
+            <div>
+                <label>Email:</label><br>
+                <input type="email" id="regEmail" required>
+            </div>
+            <div>
+                <label>Password:</label><br>
+                <input type="password" id="regPassword" required>
+            </div>
+            <div>
+                <label>First Name:</label><br>
+                <input type="text" id="firstName" required>
+            </div>
+            <div>
+                <label>Last Name:</label><br>
+                <input type="text" id="lastName" required>
+            </div>
+            <div>
+                <label>Role:</label><br>
+                <select id="role" required>
+                    <option value="STUDENT">Student</option>
+                    <option value="TEACHER">Teacher</option>
+                    <option value="ADMIN">Admin</option>
+                </select>
+            </div>
+            <div>
+                <button type="submit">Register</button>
+                <button type="button" onclick="toggleForm(false)">Login</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="studentSection" class="hidden">
+    <h2>Student List</h2>
+    <table>
+        <thead>
+        <tr>
+            <th>ID</th>
+            <th>First Name</th>
+            <th>Last Name</th>
+            <th>Student Number</th>
+            <th>Email</th>
+            <th>Address</th>
+            <th>CGPA</th>
+            <th>Actions</th>
+        </tr>
+        </thead>
+        <tbody id="studentTableBody"></tbody>
+    </table>
+</div>
+
+<div id="studentModal" class="modal">
+    <div class="modal-content">
+        <h2 id="modalTitle"></h2>
+        <form id="modalForm"></form>
+    </div>
+</div>
+</body>
+</html>
