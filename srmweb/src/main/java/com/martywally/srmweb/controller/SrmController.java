@@ -17,6 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.annotation.PostConstruct;
@@ -83,6 +84,7 @@ public class SrmController {
     }
 
     @PostConstruct
+    @Transactional
     public void initData() {
         // First save suppliers without relationships
         Supplier iowaFarms = new Supplier("Iowa Farms", "(641) 451-0009");
@@ -98,17 +100,16 @@ public class SrmController {
                 LocalDate.parse("2023-05-15"));
         productRepository.saveAll(List.of(apples, drumsticks, bananas));
 
-        // Now establish relationships
-        iowaFarms.addProduct(apples);
-        iowaFarms.addProduct(drumsticks);
-        hallmarkAgro.addProduct(bananas);
+        // Establish relationships (only need to set on owning side since we're in a transaction)
+        iowaFarms.getProducts().add(apples);
+        iowaFarms.getProducts().add(drumsticks);
+        hallmarkAgro.getProducts().add(bananas);
 
-        apples.addSupplier(iowaFarms);
-        drumsticks.addSupplier(iowaFarms);
-        bananas.addSupplier(hallmarkAgro);
-
-        // Save again to persist relationships
+        // Save the owning side to persist relationships
         supplierRepository.saveAll(List.of(iowaFarms, hallmarkAgro));
+
+        // Since Supplier is the owning side, we don't need to explicitly save products
+        // The bidirectional relationship will be maintained by Hibernate
     }
 
     // Supplier CRUD
@@ -132,6 +133,7 @@ public class SrmController {
 
     @Operation(summary = "Create a new supplier")
     @PostMapping("/suppliers")
+    @Transactional
     public ResponseEntity<SupplierDTO> createSupplier(@RequestBody SupplierDTO supplierDTO) {
         Supplier supplier = new Supplier(supplierDTO.getName(), supplierDTO.getContactPhone());
         Supplier saved = supplierRepository.save(supplier);
@@ -140,6 +142,7 @@ public class SrmController {
 
     @Operation(summary = "Update a supplier")
     @PutMapping("/suppliers/{id}")
+    @Transactional
     public ResponseEntity<?> updateSupplier(@PathVariable Integer id, @RequestBody SupplierDTO supplierDTO) {
         Optional<Supplier> existing = supplierRepository.findById(id);
         if (existing.isPresent()) {
@@ -154,6 +157,7 @@ public class SrmController {
 
     @Operation(summary = "Delete a supplier")
     @DeleteMapping("/suppliers/{id}")
+    @Transactional
     public ResponseEntity<?> deleteSupplier(@PathVariable Integer id) {
         Optional<Supplier> supplier = supplierRepository.findById(id);
         if (supplier.isPresent()) {
@@ -185,6 +189,7 @@ public class SrmController {
 
     @Operation(summary = "Create a new product")
     @PostMapping("/products")
+    @Transactional
     public ResponseEntity<ProductDTO> createProduct(@RequestBody ProductDTO productDTO) {
         Product product = new Product(
                 productDTO.getName(),
@@ -198,6 +203,7 @@ public class SrmController {
 
     @Operation(summary = "Update a product")
     @PutMapping("/products/{id}")
+    @Transactional
     public ResponseEntity<?> updateProduct(@PathVariable Long id, @RequestBody ProductDTO productDTO) {
         Optional<Product> existing = productRepository.findById(id);
         if (existing.isPresent()) {
@@ -214,6 +220,7 @@ public class SrmController {
 
     @Operation(summary = "Delete a product")
     @DeleteMapping("/products/{id}")
+    @Transactional
     public ResponseEntity<?> deleteProduct(@PathVariable Long id) {
         Optional<Product> product = productRepository.findById(id);
         if (product.isPresent()) {
@@ -241,6 +248,7 @@ public class SrmController {
 
     @Operation(summary = "Add product to supplier")
     @PostMapping("/suppliers/{supplierId}/products/{productId}")
+    @Transactional
     public ResponseEntity<?> addProductToSupplier(
             @PathVariable Integer supplierId,
             @PathVariable Long productId) {
@@ -250,8 +258,8 @@ public class SrmController {
         if (supplierOpt.isPresent() && productOpt.isPresent()) {
             Supplier supplier = supplierOpt.get();
             Product product = productOpt.get();
-            supplier.addProduct(product);
-            product.addSupplier(supplier);
+            supplier.getProducts().add(product);
+            // No need to add to product.suppliers since Supplier is owning side
             supplierRepository.save(supplier);
             return ResponseEntity.ok(convertToSupplierDTO(supplier));
         }
@@ -261,6 +269,7 @@ public class SrmController {
 
     @Operation(summary = "Remove product from supplier")
     @DeleteMapping("/suppliers/{supplierId}/products/{productId}")
+    @Transactional
     public ResponseEntity<?> removeProductFromSupplier(
             @PathVariable Integer supplierId,
             @PathVariable Long productId) {
@@ -270,8 +279,8 @@ public class SrmController {
         if (supplierOpt.isPresent() && productOpt.isPresent()) {
             Supplier supplier = supplierOpt.get();
             Product product = productOpt.get();
-            supplier.removeProduct(product);
-            product.removeSupplier(supplier);
+            supplier.getProducts().remove(product);
+            // No need to remove from product.suppliers since Supplier is owning side
             supplierRepository.save(supplier);
             return ResponseEntity.ok(convertToSupplierDTO(supplier));
         }
