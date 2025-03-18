@@ -9,6 +9,10 @@ public class SupplierDTO {
     private String contactPhone;
     private List<ProductDTO> products = new ArrayList<>();
 
+    // Constructors
+    public SupplierDTO() {}
+
+    // Getters and Setters
     public Integer getSupplierId() { return supplierId; }
     public void setSupplierId(Integer supplierId) { this.supplierId = supplierId; }
     public String getName() { return name; }

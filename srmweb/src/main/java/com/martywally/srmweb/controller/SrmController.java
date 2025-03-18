@@ -46,7 +46,7 @@ public class SrmController {
         dto.setName(supplier.getName());
         dto.setContactPhone(supplier.getContactPhone());
         dto.setProducts(supplier.getProducts().stream()
-                .map(this::convertToProductDTOWithoutSupplier)
+                .map(this::convertToProductDTOWithoutSuppliers)
                 .collect(Collectors.toList()));
         return dto;
     }
@@ -58,17 +58,13 @@ public class SrmController {
         dto.setUnitPrice(product.getUnitPrice());
         dto.setQuantityInStock(product.getQuantityInStock());
         dto.setDateSupplied(product.getDateSupplied());
-        if (product.getSupplier() != null) {
-            SupplierDTO supplierDTO = new SupplierDTO();
-            supplierDTO.setSupplierId(product.getSupplier().getSupplierId());
-            supplierDTO.setName(product.getSupplier().getName());
-            supplierDTO.setContactPhone(product.getSupplier().getContactPhone());
-            dto.setSupplier(supplierDTO);
-        }
+        dto.setSuppliers(product.getSuppliers().stream()
+                .map(this::convertToSupplierDTOWithoutProducts)
+                .collect(Collectors.toList()));
         return dto;
     }
 
-    private ProductDTO convertToProductDTOWithoutSupplier(Product product) {
+    private ProductDTO convertToProductDTOWithoutSuppliers(Product product) {
         ProductDTO dto = new ProductDTO();
         dto.setProductId(product.getProductId());
         dto.setName(product.getName());
@@ -78,33 +74,45 @@ public class SrmController {
         return dto;
     }
 
-    @PostConstruct
-    public void initData() {
-        Supplier iowaFarms = new Supplier("Iowa Farms", "(641) 451-0009");
-        Supplier hallmarkAgro = new Supplier("Hallmark Agro, Inc.", null);
-
-        supplierRepository.save(iowaFarms);
-        supplierRepository.save(hallmarkAgro);
-
-        Product apples = new Product("Santa sweet apples", new BigDecimal("1.09"), 124,
-                LocalDate.parse("2023-05-31"));
-        apples.setSupplier(iowaFarms);
-
-        Product drumsticks = new Product("Chicken drumsticks", new BigDecimal("2.25"), 18,
-                LocalDate.parse("2023-04-10"));
-        drumsticks.setSupplier(iowaFarms);
-
-        Product bananas = new Product("Dole Bananas", new BigDecimal("0.55"), 1097,
-                LocalDate.parse("2023-05-15"));
-        bananas.setSupplier(hallmarkAgro);
-
-        productRepository.saveAll(List.of(apples, drumsticks, bananas));
+    private SupplierDTO convertToSupplierDTOWithoutProducts(Supplier supplier) {
+        SupplierDTO dto = new SupplierDTO();
+        dto.setSupplierId(supplier.getSupplierId());
+        dto.setName(supplier.getName());
+        dto.setContactPhone(supplier.getContactPhone());
+        return dto;
     }
 
-    @Operation(summary = "Get all suppliers", description = "Retrieve list of all suppliers with their products")
-    @ApiResponse(responseCode = "200", description = "Successful retrieval of suppliers",
-            content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
-                    schema = @Schema(implementation = SupplierDTO.class)))
+    @PostConstruct
+    public void initData() {
+        // First save suppliers without relationships
+        Supplier iowaFarms = new Supplier("Iowa Farms", "(641) 451-0009");
+        Supplier hallmarkAgro = new Supplier("Hallmark Agro, Inc.", null);
+        supplierRepository.saveAll(List.of(iowaFarms, hallmarkAgro));
+
+        // Then save products without relationships
+        Product apples = new Product("Santa sweet apples", new BigDecimal("1.09"), 124,
+                LocalDate.parse("2023-05-31"));
+        Product drumsticks = new Product("Chicken drumsticks", new BigDecimal("2.25"), 18,
+                LocalDate.parse("2023-04-10"));
+        Product bananas = new Product("Dole Bananas", new BigDecimal("0.55"), 1097,
+                LocalDate.parse("2023-05-15"));
+        productRepository.saveAll(List.of(apples, drumsticks, bananas));
+
+        // Now establish relationships
+        iowaFarms.addProduct(apples);
+        iowaFarms.addProduct(drumsticks);
+        hallmarkAgro.addProduct(bananas);
+
+        apples.addSupplier(iowaFarms);
+        drumsticks.addSupplier(iowaFarms);
+        bananas.addSupplier(hallmarkAgro);
+
+        // Save again to persist relationships
+        supplierRepository.saveAll(List.of(iowaFarms, hallmarkAgro));
+    }
+
+    // Supplier CRUD
+    @Operation(summary = "Get all suppliers")
     @GetMapping("/suppliers")
     public List<SupplierDTO> getAllSuppliers() {
         return supplierRepository.findAll().stream()
@@ -112,10 +120,52 @@ public class SrmController {
                 .collect(Collectors.toList());
     }
 
-    @Operation(summary = "Get all products", description = "Retrieve list of all products sorted by name")
-    @ApiResponse(responseCode = "200", description = "Successful retrieval of products",
-            content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
-                    schema = @Schema(implementation = ProductDTO.class)))
+    @Operation(summary = "Get supplier by ID")
+    @GetMapping("/suppliers/{id}")
+    public ResponseEntity<?> getSupplierById(@PathVariable Integer id) {
+        Optional<Supplier> supplier = supplierRepository.findById(id);
+        return supplier.isPresent()
+                ? ResponseEntity.ok(convertToSupplierDTO(supplier.get()))
+                : ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "Supplier with ID " + id + " not found"));
+    }
+
+    @Operation(summary = "Create a new supplier")
+    @PostMapping("/suppliers")
+    public ResponseEntity<SupplierDTO> createSupplier(@RequestBody SupplierDTO supplierDTO) {
+        Supplier supplier = new Supplier(supplierDTO.getName(), supplierDTO.getContactPhone());
+        Supplier saved = supplierRepository.save(supplier);
+        return ResponseEntity.status(HttpStatus.CREATED).body(convertToSupplierDTO(saved));
+    }
+
+    @Operation(summary = "Update a supplier")
+    @PutMapping("/suppliers/{id}")
+    public ResponseEntity<?> updateSupplier(@PathVariable Integer id, @RequestBody SupplierDTO supplierDTO) {
+        Optional<Supplier> existing = supplierRepository.findById(id);
+        if (existing.isPresent()) {
+            Supplier supplier = existing.get();
+            supplier.setName(supplierDTO.getName());
+            supplier.setContactPhone(supplierDTO.getContactPhone());
+            return ResponseEntity.ok(convertToSupplierDTO(supplierRepository.save(supplier)));
+        }
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "Supplier with ID " + id + " not found"));
+    }
+
+    @Operation(summary = "Delete a supplier")
+    @DeleteMapping("/suppliers/{id}")
+    public ResponseEntity<?> deleteSupplier(@PathVariable Integer id) {
+        Optional<Supplier> supplier = supplierRepository.findById(id);
+        if (supplier.isPresent()) {
+            supplierRepository.deleteById(id);
+            return ResponseEntity.ok().build();
+        }
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "Supplier with ID " + id + " not found"));
+    }
+
+    // Product CRUD
+    @Operation(summary = "Get all products")
     @GetMapping("/products")
     public List<ProductDTO> getAllProducts() {
         return productRepository.findAllByOrderByNameAsc().stream()
@@ -123,30 +173,109 @@ public class SrmController {
                 .collect(Collectors.toList());
     }
 
-    @Operation(summary = "Get products by supplier ID",
-            description = "Retrieve list of products for a specific supplier")
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Successful retrieval of products",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
-                            schema = @Schema(implementation = ProductDTO.class))),
-            @ApiResponse(responseCode = "404", description = "Supplier not found",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE))
-    })
-    @GetMapping("/product/get/suppler/{supplierId}")
-    public ResponseEntity<?> getProductsBySupplierId(
-            @Parameter(description = "ID of supplier to fetch products for")
-            @PathVariable Integer supplierId) {
-        Optional<Supplier> supplier = supplierRepository.findById(supplierId);
+    @Operation(summary = "Get product by ID")
+    @GetMapping("/products/{id}")
+    public ResponseEntity<?> getProductById(@PathVariable Long id) {
+        Optional<Product> product = productRepository.findById(id);
+        return product.isPresent()
+                ? ResponseEntity.ok(convertToProductDTO(product.get()))
+                : ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "Product with ID " + id + " not found"));
+    }
 
+    @Operation(summary = "Create a new product")
+    @PostMapping("/products")
+    public ResponseEntity<ProductDTO> createProduct(@RequestBody ProductDTO productDTO) {
+        Product product = new Product(
+                productDTO.getName(),
+                productDTO.getUnitPrice(),
+                productDTO.getQuantityInStock(),
+                productDTO.getDateSupplied()
+        );
+        Product saved = productRepository.save(product);
+        return ResponseEntity.status(HttpStatus.CREATED).body(convertToProductDTO(saved));
+    }
+
+    @Operation(summary = "Update a product")
+    @PutMapping("/products/{id}")
+    public ResponseEntity<?> updateProduct(@PathVariable Long id, @RequestBody ProductDTO productDTO) {
+        Optional<Product> existing = productRepository.findById(id);
+        if (existing.isPresent()) {
+            Product product = existing.get();
+            product.setName(productDTO.getName());
+            product.setUnitPrice(productDTO.getUnitPrice());
+            product.setQuantityInStock(productDTO.getQuantityInStock());
+            product.setDateSupplied(productDTO.getDateSupplied());
+            return ResponseEntity.ok(convertToProductDTO(productRepository.save(product)));
+        }
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "Product with ID " + id + " not found"));
+    }
+
+    @Operation(summary = "Delete a product")
+    @DeleteMapping("/products/{id}")
+    public ResponseEntity<?> deleteProduct(@PathVariable Long id) {
+        Optional<Product> product = productRepository.findById(id);
+        if (product.isPresent()) {
+            productRepository.deleteById(id);
+            return ResponseEntity.ok().build();
+        }
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "Product with ID " + id + " not found"));
+    }
+
+    // Relationship management
+    @Operation(summary = "Get products by supplier ID")
+    @GetMapping("/product/get/suppler/{supplierId}")
+    public ResponseEntity<?> getProductsBySupplierId(@PathVariable Integer supplierId) {
+        Optional<Supplier> supplier = supplierRepository.findById(supplierId);
         if (supplier.isPresent()) {
-            List<ProductDTO> products = productRepository.findBySupplierSupplierId(supplierId).stream()
+            List<ProductDTO> products = supplier.get().getProducts().stream()
                     .map(this::convertToProductDTO)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(products);
-        } else {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", "Supplier with ID " + supplierId + " not found");
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
         }
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "Supplier with ID " + supplierId + " not found"));
+    }
+
+    @Operation(summary = "Add product to supplier")
+    @PostMapping("/suppliers/{supplierId}/products/{productId}")
+    public ResponseEntity<?> addProductToSupplier(
+            @PathVariable Integer supplierId,
+            @PathVariable Long productId) {
+        Optional<Supplier> supplierOpt = supplierRepository.findById(supplierId);
+        Optional<Product> productOpt = productRepository.findById(productId);
+
+        if (supplierOpt.isPresent() && productOpt.isPresent()) {
+            Supplier supplier = supplierOpt.get();
+            Product product = productOpt.get();
+            supplier.addProduct(product);
+            product.addSupplier(supplier);
+            supplierRepository.save(supplier);
+            return ResponseEntity.ok(convertToSupplierDTO(supplier));
+        }
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "Supplier or Product not found"));
+    }
+
+    @Operation(summary = "Remove product from supplier")
+    @DeleteMapping("/suppliers/{supplierId}/products/{productId}")
+    public ResponseEntity<?> removeProductFromSupplier(
+            @PathVariable Integer supplierId,
+            @PathVariable Long productId) {
+        Optional<Supplier> supplierOpt = supplierRepository.findById(supplierId);
+        Optional<Product> productOpt = productRepository.findById(productId);
+
+        if (supplierOpt.isPresent() && productOpt.isPresent()) {
+            Supplier supplier = supplierOpt.get();
+            Product product = productOpt.get();
+            supplier.removeProduct(product);
+            product.removeSupplier(supplier);
+            supplierRepository.save(supplier);
+            return ResponseEntity.ok(convertToSupplierDTO(supplier));
+        }
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "Supplier or Product not found"));
     }
 }

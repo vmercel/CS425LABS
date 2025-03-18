@@ -16,12 +16,7 @@ public class Supplier {
 
     private String contactPhone;
 
-    @ManyToMany
-    @JoinTable(
-            name = "product_supplier",
-            joinColumns = @JoinColumn(name = "supplier_id"),
-            inverseJoinColumns = @JoinColumn(name = "product_id")
-    )
+    @OneToMany(mappedBy = "supplier", cascade = CascadeType.ALL)
     private List<Product> products = new ArrayList<>();
 
     public Supplier() {}
@@ -40,6 +35,4 @@ public class Supplier {
     public void setContactPhone(String contactPhone) { this.contactPhone = contactPhone; }
     public List<Product> getProducts() { return products; }
     public void setProducts(List<Product> products) { this.products = products; }
-    public void addProduct(Product product) { this.products.add(product); }
-    public void removeProduct(Product product) { this.products.remove(product); }
 }

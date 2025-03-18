@@ -2,8 +2,6 @@ package com.martywally.srmweb.dto;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.List;
 
 public class ProductDTO {
     private Long productId;
@@ -11,8 +9,12 @@ public class ProductDTO {
     private BigDecimal unitPrice;
     private Integer quantityInStock;
     private LocalDate dateSupplied;
-    private List<SupplierDTO> suppliers = new ArrayList<>();
+    private SupplierDTO supplier;
 
+    // Constructors
+    public ProductDTO() {}
+
+    // Getters and Setters
     public Long getProductId() { return productId; }
     public void setProductId(Long productId) { this.productId = productId; }
     public String getName() { return name; }
@@ -23,6 +25,6 @@ public class ProductDTO {
     public void setQuantityInStock(Integer quantityInStock) { this.quantityInStock = quantityInStock; }
     public LocalDate getDateSupplied() { return dateSupplied; }
     public void setDateSupplied(LocalDate dateSupplied) { this.dateSupplied = dateSupplied; }
-    public List<SupplierDTO> getSuppliers() { return suppliers; }
-    public void setSuppliers(List<SupplierDTO> suppliers) { this.suppliers = suppliers; }
+    public SupplierDTO getSupplier() { return supplier; }
+    public void setSupplier(SupplierDTO supplier) { this.supplier = supplier; }
 }
